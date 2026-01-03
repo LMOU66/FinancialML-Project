@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Emissions Dashboard</title>
+
+  <link rel="stylesheet" href="/static/style.css">
+
+  <!-- Markdown renderer + sanitizer -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
+
+  <style>
+    /* Enhanced markdown styling */
+    .message-content h1 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: #111827;
+      margin: 1.5rem 0 1rem 0;
+      border-bottom: 2px solid #e5e7eb;
+      padding-bottom: 0.5rem;
+    }
+
+    .message-content h2 {
+      font-size: 1.3rem;
+      font-weight: 600;
+      color: #111827;
+      margin: 1.25rem 0 0.75rem 0;
+    }
+
+    .message-content h3 {
+      font-size: 1.15rem;
+      font-weight: 600;
+      color: #1f2937;
+      margin: 1rem 0 0.5rem 0;
+    }
+
+    .message-content h4 {
+      font-size: 1.05rem;
+      font-weight: 600;
+      color: #374151;
+      margin: 0.75rem 0 0.5rem 0;
+    }
+
+    .message-content p {
+      margin: 0.75rem 0;
+      line-height: 1.7;
+    }
+
+    .message-content strong {
+      font-weight: 600;
+      color: #111827;
+    }
+
+    .message-content em {
+      font-style: italic;
+      color: #4b5563;
+    }
+
+    .message-content ul, .message-content ol {
+      margin: 0.75rem 0;
+      padding-left: 1.75rem;
+    }
+
+    .message-content li {
+      margin: 0.5rem 0;
+      line-height: 1.6;
+    }
+
+    .message-content blockquote {
+      border-left: 4px solid #e5e7eb;
+      padding-left: 1rem;
+      margin: 1rem 0;
+      color: #6b7280;
+      font-style: italic;
+    }
+
+    .message-content code {
+      background: #f3f4f6;
+      padding: 0.2rem 0.4rem;
+      border-radius: 0.25rem;
+      font-family: 'Courier New', monospace;
+      font-size: 0.9em;
+      color: #dc2626;
+    }
+
+    .message-content pre {
+      background: #1f2937;
+      color: #e5e7eb;
+      padding: 1rem;
+      border-radius: 0.5rem;
+      overflow-x: auto;
+      margin: 1rem 0;
+    }
+
+    .message-content pre code {
+      background: none;
+      padding: 0;
+      color: inherit;
+    }
+
+    .message-content hr {
+      border: none;
+      border-top: 1px solid #e5e7eb;
+      margin: 1.5rem 0;
+    }
+
+    .message-content > *:first-child {
+      margin-top: 0;
+    }
+
+    .message-content > *:last-child {
+      margin-bottom: 0;
+    }
+
+    /* Delete button for chat history */
+    .chat-history-item {
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .chat-history-item .delete-btn {
+      opacity: 0;
+      background: #ef4444;
+      color: white;
+      border: none;
+      border-radius: 0.25rem;
+      padding: 0.25rem 0.5rem;
+      font-size: 0.75rem;
+      cursor: pointer;
+      transition: opacity 0.2s;
+    }
+
+    .chat-history-item:hover .delete-btn {
+      opacity: 1;
+    }
+
+    .chat-history-item .delete-btn:hover {
+      background: #dc2626;
+    }
+
+    .chat-title {
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+  </style>
+</head>
+<body>
+  <div class="sidebar">
+    <div class="new-chat-btn" onclick="newChat()">+ New chat</div>
+    <div class="sidebar-title">Recent chats</div>
+    <div id="chatHistoryList">
+      <!-- Chat history will be populated here -->
+    </div>
+  </div>
+
+  <div class="main-content">
+    <div class="chat-container" id="chatContainer">
+      <div class="empty-state">
+        <h1>Emissions Dashboard</h1>
+        <p>How can I help you analyze emissions data today?</p>
+      </div>
+    </div>
+
+    <div class="input-container">
+      <div class="input-wrapper">
+        <input
+          type="text"
+          class="input-box"
+          placeholder="Message Emissions Dashboard"
+          id="messageInput"
+          onkeypress="handleKeyPress(event)"
+        />
+        <button class="voice-button" onclick="sendMessage()" aria-label="Send">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+            <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Chat history management
+    let currentChatId = null;
+    let chats = {};
+
+    // Load chats from localStorage on page load
+    function loadChats() {
+      const saved = localStorage.getItem('emissionChats');
+      if (saved) {
+        try {
+          chats = JSON.parse(saved);
+          renderChatHistory();
+
+          // Load the most recent chat if exists
+          const chatIds = Object.keys(chats).sort((a, b) =>
+            chats[b].timestamp - chats[a].timestamp
+          );
+          if (chatIds.length > 0 && !currentChatId) {
+            loadChat(chatIds[0]);
+          }
+        } catch (e) {
+          console.error('Failed to load chats:', e);
+          chats = {};
+        }
+      }
+    }
+
+    // Save chats to localStorage
+    function saveChats() {
+      try {
+        localStorage.setItem('emissionChats', JSON.stringify(chats));
+      } catch (e) {
+        console.error('Failed to save chats:', e);
+      }
+    }
+
+    // Create a new chat
+    function newChat() {
+      currentChatId = 'chat_' + Date.now();
+      chats[currentChatId] = {
+        id: currentChatId,
+        title: 'New Chat',
+        messages: [],
+        timestamp: Date.now()
+      };
+
+      const chatContainer = document.getElementById('chatContainer');
+      chatContainer.innerHTML = `
+        <div class="empty-state">
+          <h1>Emissions Dashboard</h1>
+          <p>How can I help you analyze emissions data today?</p>
+        </div>
+      `;
+      document.getElementById('messageInput').value = '';
+
+      saveChats();
+      renderChatHistory();
+    }
+
+    // Load an existing chat
+    function loadChat(chatId) {
+      if (!chats[chatId]) return;
+
+      currentChatId = chatId;
+      const chat = chats[chatId];
+
+      const chatContainer = document.getElementById('chatContainer');
+      chatContainer.innerHTML = '';
+
+      if (chat.messages.length === 0) {
+        chatContainer.innerHTML = `
+          <div class="empty-state">
+            <h1>Emissions Dashboard</h1>
+            <p>How can I help you analyze emissions data today?</p>
+          </div>
+        `;
+      } else {
+        chat.messages.forEach(msg => {
+          if (msg.role === 'user') {
+            addUserMessage(msg.content, false);
+          } else {
+            addAssistantMessage(msg.content, false);
+          }
+        });
+      }
+
+      renderChatHistory();
+      chatContainer.scrollTop = chatContainer.scrollHeight;
+    }
+
+    // Delete a chat
+    function deleteChat(chatId, event) {
+      event.stopPropagation();
+
+      if (confirm('Delete this chat?')) {
+        delete chats[chatId];
+        saveChats();
+
+        if (currentChatId === chatId) {
+          const remainingChats = Object.keys(chats);
+          if (remainingChats.length > 0) {
+            loadChat(remainingChats[0]);
+          } else {
+            newChat();
+          }
+        } else {
+          renderChatHistory();
+        }
+      }
+    }
+
+    // Render chat history sidebar
+    function renderChatHistory() {
+      const historyList = document.getElementById('chatHistoryList');
+      historyList.innerHTML = '';
+
+      const sortedChats = Object.values(chats).sort((a, b) =>
+        b.timestamp - a.timestamp
+      );
+
+      sortedChats.forEach(chat => {
+        const item = document.createElement('div');
+        item.className = 'chat-history-item' + (chat.id === currentChatId ? ' active' : '');
+        item.onclick = () => loadChat(chat.id);
+
+        const title = document.createElement('div');
+        title.className = 'chat-title';
+        title.textContent = chat.title;
+
+        const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'delete-btn';
+        deleteBtn.textContent = '×';
+        deleteBtn.onclick = (e) => deleteChat(chat.id, e);
+
+        item.appendChild(title);
+        item.appendChild(deleteBtn);
+        historyList.appendChild(item);
+      });
+    }
+
+    // Update chat title based on first message
+    function updateChatTitle(userMessage) {
+      if (!currentChatId || !chats[currentChatId]) return;
+
+      const chat = chats[currentChatId];
+      if (chat.messages.length === 1) { // First message
+        chat.title = userMessage.substring(0, 50) + (userMessage.length > 50 ? '...' : '');
+        chat.timestamp = Date.now();
+        saveChats();
+        renderChatHistory();
+      }
+    }
+
+    // Save message to current chat
+    function saveMessage(role, content) {
+      if (!currentChatId) {
+        newChat();
+      }
+
+      if (chats[currentChatId]) {
+        chats[currentChatId].messages.push({ role, content });
+        chats[currentChatId].timestamp = Date.now();
+        saveChats();
+
+        if (role === 'user') {
+          updateChatTitle(content);
+        }
+      }
+    }
+
+    // Configure marked for better rendering
+    marked.setOptions({
+      breaks: true,
+      gfm: true,
+      headerIds: false,
+      mangle: false
+    });
+
+    function handleKeyPress(event) {
+      if (event.key === 'Enter') sendMessage();
+    }
+
+    function ensureEmptyStateRemoved() {
+      const emptyState = document.querySelector('.empty-state');
+      if (emptyState) emptyState.remove();
+    }
+
+    function addUserMessage(text, save = true) {
+      const chatContainer = document.getElementById('chatContainer');
+      ensureEmptyStateRemoved();
+
+      const userMsg = document.createElement('div');
+      userMsg.className = 'chat-message user-message';
+
+      const content = document.createElement('div');
+      content.className = 'message-content';
+      content.textContent = text;
+
+      userMsg.appendChild(content);
+      chatContainer.appendChild(userMsg);
+      chatContainer.scrollTop = chatContainer.scrollHeight;
+
+      if (save) {
+        saveMessage('user', text);
+      }
+    }
+
+    function addAssistantMessage(text, save = true) {
+      const chatContainer = document.getElementById('chatContainer');
+      ensureEmptyStateRemoved();
+
+      const aiMsg = document.createElement('div');
+      aiMsg.className = 'chat-message assistant-message';
+
+      const content = document.createElement('div');
+      content.className = 'message-content';
+      renderMarkdownInto(content, text);
+
+      aiMsg.appendChild(content);
+      chatContainer.appendChild(aiMsg);
+      chatContainer.scrollTop = chatContainer.scrollHeight;
+
+      if (save) {
+        saveMessage('assistant', text);
+      }
+    }
+
+    function renderMarkdownInto(el, markdownText) {
+      if (!markdownText) {
+        el.textContent = '';
+        return;
+      }
+
+      try {
+        // Clean up common markdown issues from LLM output
+        let cleanedText = markdownText
+          .replace(/\s*\|\|\s*/g, '\n\n')
+          .replace(/\|[-]+\|/g, '\n')
+          .replace(/(#{1,6}\s+[^\n]+)/g, '\n$1\n')
+          .replace(/([^\n])([-*]\s+)/g, '$1\n$2')
+          .replace(/\n{3,}/g, '\n\n')
+          .trim();
+
+        const html = marked.parse(cleanedText, {
+          breaks: true,
+          gfm: true,
+          headerIds: false,
+          mangle: false
+        });
+
+        el.innerHTML = DOMPurify.sanitize(html);
+      } catch (err) {
+        console.error('Markdown error:', err);
+        el.textContent = markdownText;
+      }
+    }
+
+    function createAssistantBubble() {
+      const chatContainer = document.getElementById('chatContainer');
+      ensureEmptyStateRemoved();
+
+      const aiMsg = document.createElement('div');
+      aiMsg.className = 'chat-message assistant-message';
+
+      const content = document.createElement('div');
+      content.className = 'message-content';
+
+      const thinking = document.createElement('div');
+      thinking.className = 'thinking';
+      thinking.textContent = "Thinking...";
+
+      aiMsg.appendChild(content);
+      aiMsg.appendChild(thinking);
+
+      chatContainer.appendChild(aiMsg);
+      chatContainer.scrollTop = chatContainer.scrollHeight;
+
+      return {
+        contentEl: content,
+        thinkingEl: thinking,
+        setThinking: (text) => {
+          if (text) {
+            thinking.textContent = text;
+            thinking.style.display = "block";
+          } else {
+            thinking.style.display = "none";
+          }
+        }
+      };
+    }
+
+    async function sendMessage() {
+      const input = document.getElementById('messageInput');
+      const message = input.value.trim();
+      if (!message) return;
+
+      addUserMessage(message, true);
+      input.value = '';
+
+      const bubble = createAssistantBubble();
+      bubble.setThinking("Thinking...");
+
+      const streamUrl = '/api/message_stream';
+      const nonStreamUrl = '/api/message';
+
+      try {
+        const res = await fetch(streamUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message })
+        });
+
+        if (!res.ok || !res.body) {
+          throw new Error("Streaming not available");
+        }
+
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+
+        let buffer = "";
+        let lastRenderTime = 0;
+        const renderInterval = 100;
+
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+
+          const chunk = decoder.decode(value, { stream: true });
+          const lines = chunk.split('\n');
+
+          for (const line of lines) {
+            if (!line.startsWith('data: ')) continue;
+
+            const text = line.slice(6);
+
+            if (text === '[DONE]') {
+              bubble.setThinking("");
+              renderMarkdownInto(bubble.contentEl, buffer);
+              saveMessage('assistant', buffer);
+              return;
+            }
+
+            if (text.startsWith('[THINKING]')) {
+              const msg = text.replace('[THINKING]', '').trim();
+              bubble.setThinking(msg || "Thinking...");
+              continue;
+            }
+
+            buffer += text;
+
+            const now = Date.now();
+            if (now - lastRenderTime > renderInterval) {
+              renderMarkdownInto(bubble.contentEl, buffer);
+              lastRenderTime = now;
+              document.getElementById('chatContainer').scrollTop =
+                document.getElementById('chatContainer').scrollHeight;
+            }
+          }
+        }
+
+        bubble.setThinking("");
+        renderMarkdownInto(bubble.contentEl, buffer);
+        saveMessage('assistant', buffer);
+
+      } catch (streamErr) {
+        console.warn('Streaming failed, using fallback:', streamErr);
+
+        try {
+          bubble.setThinking("Thinking...");
+
+          const res2 = await fetch(nonStreamUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message })
+          });
+
+          if (!res2.ok) {
+            const err = await res2.json().catch(() => ({}));
+            throw new Error(err.error || `HTTP ${res2.status}`);
+          }
+
+          const data = await res2.json();
+          bubble.setThinking("");
+          renderMarkdownInto(bubble.contentEl, data.reply);
+          saveMessage('assistant', data.reply);
+
+        } catch (e2) {
+          bubble.setThinking("");
+          bubble.contentEl.textContent = `Error: ${e2.message}`;
+          saveMessage('assistant', `Error: ${e2.message}`);
+        }
+      }
+    }
+
+    // Initialize on page load
+    window.addEventListener('DOMContentLoaded', () => {
+      loadChats();
+      if (Object.keys(chats).length === 0) {
+        newChat();
+      }
+    });
+  </script>
+</body>
+</html>
