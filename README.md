@@ -1,4 +1,4 @@
-# FinancialML-Project# Emissions Analysis Agent
+ FinancialML-Project Emissions Analysis Agent
 
 **Financial Machine Learning Course Project**  
 **Students :** Mouheb Ben Nasr & Jamila Ben Cheikh
